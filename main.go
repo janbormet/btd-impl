@@ -235,12 +235,14 @@ func PRFExpEval(crs *Setup, suite *pairing.SuiteBn256, K kyber.Point, i int) (ky
 
 func main() {
 	suite := pairing.NewSuiteBn256()
+	B := 100
 	// Create a public/private keypair
 	sk := suite.G2().Scalar().Pick(suite.RandomStream()) // Alice's private key
-	pk := suite.Point().Mul(sk, nil)                     // Alice's public key
-	crs := PRFSetup(suite, 10)
-	cts := make([]CT, 10)
-	for i := 0; i < 10; i++ {
+	pk := suite.Point().Mul(sk, nil)
+	// Alice's public key
+	crs := PRFSetup(suite, B)
+	cts := make([]CT, B)
+	for i := 0; i < B; i++ {
 		ct, err := BEnc(crs, suite, pk, i, []byte(fmt.Sprintf("Party %d", i)))
 		if err != nil {
 			fmt.Println(err)
