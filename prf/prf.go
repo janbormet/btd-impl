@@ -55,6 +55,14 @@ func (f *PRF) KeyGen() kyber.Scalar {
 	return f.suite.Scalar().Pick(f.suite.RandomStream())
 }
 
+func (f *PRF) SumKeys(k []kyber.Scalar) kyber.Scalar {
+	sum := f.suite.Scalar().Zero()
+	for _, ki := range k {
+		sum = sum.Add(sum, ki)
+	}
+	return sum
+}
+
 func (f *PRF) Puncture(k kyber.Scalar, i int) (kyber.Point, error) {
 	if i < 0 || i >= f.B {
 		return nil, fmt.Errorf("puncturing index out of domain. Domain: [0, %d-1], index: %d", f.B, i)

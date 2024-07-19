@@ -8,7 +8,7 @@ import (
 
 func main() {
 	suite := pairing.NewSuiteBn256()
-	B := 100
+	B := 50
 	btd := be.NewBTD(suite, B)
 	sk, pk := btd.KeyGen()
 
@@ -31,4 +31,15 @@ func main() {
 	}
 	fmt.Println("Decryption succeeded")
 	fmt.Println("Pairings for Dec:", count)
+
+	Ks, err := btd.BatchDecOpt(cts, sk)
+	if err != nil {
+		panic(err)
+	}
+	count, err = btd.BatchCombineOpt(cts, Ks)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Optimized Decryption succeeded")
+	fmt.Println("Pairings for optimized Dec:", count)
 }
