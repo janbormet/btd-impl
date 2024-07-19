@@ -176,9 +176,6 @@ func (b *BTD) BatchCombineOpt(cts []CT, Ks []kyber.Point) (int, error) {
 	KsIdx := 1
 	ks := make([]kyber.Scalar, L)
 	for idx, ct := range cts {
-		if idx != ct.i {
-			return count, fmt.Errorf("decryption failed on index %d, wrong index", ct.i)
-		}
 		count++
 		prfKi, err := b.prf.ExpEval(Ks[0], ct.i)
 		if err != nil {
