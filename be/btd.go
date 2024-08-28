@@ -7,21 +7,21 @@ import (
 	"fmt"
 	"go.dedis.ch/kyber/v4"
 	"go.dedis.ch/kyber/v4/pairing"
+	"hash"
 	"math"
 )
 
 type CT struct {
-	i      int
-	gamma  kyber.Point
-	kp     kyber.Point
-	c      elgamal.CT
-	mPad   kyber.Point
-	cM     []byte
-	m      []byte
-	gammaR kyber.Point
-	rPad   kyber.Point
-	cK     []byte
-	k      kyber.Scalar
+	i     int
+	gamma kyber.Point
+	kp    kyber.Point
+	c     elgamal.CT
+	m     []byte
+	k     kyber.Scalar
+	r     kyber.Point
+	rKey  []byte
+	cPad  []byte
+	IV    []byte
 }
 
 type BTD struct {
@@ -29,6 +29,7 @@ type BTD struct {
 	prf   *prf.PRF
 	eg    *elgamal.ElGamal
 	B     int
+	H     *Hasher
 }
 
 func NewBTD(suite *pairing.SuiteBn256, B int) *BTD {
@@ -39,6 +40,7 @@ func NewBTD(suite *pairing.SuiteBn256, B int) *BTD {
 		prf:   prf,
 		eg:    eg,
 		B:     B,
+		H:     &Hasher{hash: suite.Hash()},
 	}
 }
 
@@ -47,11 +49,14 @@ func (b *BTD) KeyGen() (kyber.Scalar, kyber.Point) {
 }
 
 func (b *BTD) Enc(pk kyber.Point, i int, m []byte) (CT, error) {
-	MPad := b.suite.GT().Point().Pick(b.suite.RandomStream())
-	MPadBytes, err := MPad.MarshalBinary()
+	r := b.suite.GT().Point().Pick(b.suite.RandomStream())
+	rBin, err := r.MarshalBinary()
 	if err != nil {
 		return CT{}, err
 	}
+	IV := make([]byte, b.H.Size())
+	b.suite.RandomStream().XORKeyStream(IV, make([]byte, b.H.Size()))
+	rKey := b.H.Hash(rBin)
 	k := b.prf.KeyGen()
 	kp, err := b.prf.Puncture(k, i)
 	if err != nil {
@@ -63,36 +68,31 @@ func (b *BTD) Enc(pk kyber.Point, i int, m []byte) (CT, error) {
 	if err != nil {
 		return CT{}, err
 	}
-	gamma := b.suite.GT().Point().Add(pad, MPad)
-	seed := b.suite.Hash().Sum(MPadBytes)
-	cM := make([]byte, len(m))
-	b.suite.XOF(seed).XORKeyStream(cM, m)
-	r := b.suite.GT().Scalar().Pick(b.suite.RandomStream())
-	rPad := b.suite.GT().Point().Mul(r, nil)
-	gammaR := b.suite.GT().Point().Add(pad, rPad)
-	rPadBytes, err := rPad.MarshalBinary()
-	if err != nil {
-		return CT{}, err
-	}
-	seedR := b.suite.Hash().Sum(rPadBytes)
+	gamma := b.suite.GT().Point().Add(pad, r)
 	kBytes, err := k.MarshalBinary()
 	if err != nil {
 		return CT{}, err
 	}
-	cK := make([]byte, len(kBytes))
-	b.suite.XOF(seedR).XORKeyStream(cK, kBytes)
+	var inner []byte
+	inner = append(inner, rKey...)
+	inner = append(inner, IV...)
+	innerH := b.H.Hash(inner)
+	var paddedMessage []byte
+	paddedMessage = append(paddedMessage, kBytes...)
+	paddedMessage = append(paddedMessage, m...)
+	cPad := make([]byte, len(paddedMessage))
+	b.suite.XOF(innerH).XORKeyStream(cPad, paddedMessage)
 	return CT{
-		i:      i,
-		gamma:  gamma,
-		kp:     kp,
-		c:      egct,
-		mPad:   MPad,
-		cM:     cM,
-		m:      m,
-		gammaR: gammaR,
-		rPad:   rPad,
-		cK:     cK,
-		k:      k,
+		i:     i,
+		gamma: gamma,
+		kp:    kp,
+		c:     egct,
+		m:     m,
+		k:     k,
+		r:     r,
+		rKey:  rKey,
+		cPad:  cPad,
+		IV:    IV,
 	}, nil
 }
 
@@ -130,17 +130,34 @@ func (b *BTD) BatchCombine(cts []CT, K kyber.Point) (int, error) {
 			}
 			sum = b.suite.GT().Point().Add(sum, peval)
 		}
-		MPad := b.suite.GT().Point().Sub(b.suite.GT().Point().Add(ct.gamma, sum), prfKi)
-		if !MPad.Equal(ct.mPad) {
-			return count, fmt.Errorf("decryption failed on index %d, wrong mPad", ct.i)
+		r := b.suite.GT().Point().Sub(b.suite.GT().Point().Add(ct.gamma, sum), prfKi)
+		if !r.Equal(ct.r) {
+			return count, fmt.Errorf("decryption failed on index %d, wrong r", ct.i)
 		}
-		MPadBytes, err := MPad.MarshalBinary()
+		rBin, err := r.MarshalBinary()
 		if err != nil {
 			return count, err
 		}
-		seed := b.suite.Hash().Sum(MPadBytes)
-		m := make([]byte, len(ct.cM))
-		b.suite.XOF(seed).XORKeyStream(m, ct.cM)
+		rKey := b.H.Hash(rBin)
+		if !bytes.Equal(rKey, ct.rKey) {
+			return count, fmt.Errorf("decryption failed on index %d, wrong rKey", ct.i)
+		}
+		var inner []byte
+		inner = append(inner, rKey...)
+		inner = append(inner, ct.IV...)
+		innerH := b.H.Hash(inner)
+		paddedMessage := make([]byte, len(ct.cPad))
+		b.suite.XOF(innerH).XORKeyStream(paddedMessage, ct.cPad)
+		kBytes := paddedMessage[:b.suite.G2().Scalar().MarshalSize()]
+		k := b.suite.G2().Scalar().Zero()
+		err = k.UnmarshalBinary(kBytes)
+		if err != nil {
+			return count, err
+		}
+		if !k.Equal(ct.k) {
+			return count, fmt.Errorf("decryption failed on index %d, wrong k", ct.i)
+		}
+		m := paddedMessage[b.suite.G2().Scalar().MarshalSize():]
 		if !bytes.Equal(m, ct.m) {
 			return count, fmt.Errorf("decryption failed on index %d", ct.i)
 		}
@@ -214,34 +231,27 @@ func (b *BTD) BatchCombineOpt(cts []CT, Ks []kyber.Point) (int, error) {
 			sum = b.suite.GT().Point().Add(sum, eval)
 
 		}
-
-		MPad := b.suite.GT().Point().Sub(b.suite.GT().Point().Add(ct.gamma, sum), prfKi)
-		if !MPad.Equal(ct.mPad) {
-			return count, fmt.Errorf("decryption failed on index %d, wrong mPad", ct.i)
+		r := b.suite.GT().Point().Sub(b.suite.GT().Point().Add(ct.gamma, sum), prfKi)
+		if !r.Equal(ct.r) {
+			return count, fmt.Errorf("decryption failed on index %d, wrong r", ct.i)
 		}
-		MPadBytes, err := MPad.MarshalBinary()
+		rBin, err := r.MarshalBinary()
 		if err != nil {
 			return count, err
 		}
-		seed := b.suite.Hash().Sum(MPadBytes)
-		m := make([]byte, len(ct.cM))
-		b.suite.XOF(seed).XORKeyStream(m, ct.cM)
-		if !bytes.Equal(m, ct.m) {
-			return count, fmt.Errorf("decryption failed on index %d", ct.i)
+		rKey := b.H.Hash(rBin)
+		if !bytes.Equal(rKey, ct.rKey) {
+			return count, fmt.Errorf("decryption failed on index %d, wrong rKey", ct.i)
 		}
+		var inner []byte
+		inner = append(inner, rKey...)
+		inner = append(inner, ct.IV...)
+		innerH := b.H.Hash(inner)
+		paddedMessage := make([]byte, len(ct.cPad))
+		b.suite.XOF(innerH).XORKeyStream(paddedMessage, ct.cPad)
+		kBytes := paddedMessage[:b.suite.G2().Scalar().MarshalSize()]
+		k := b.suite.G2().Scalar().Zero()
 
-		RPad := b.suite.GT().Point().Sub(b.suite.GT().Point().Add(ct.gammaR, sum), prfKi)
-		if !RPad.Equal(ct.rPad) {
-			return count, fmt.Errorf("decryption failed on index %d, wrong rPad", ct.i)
-		}
-		RPadBytes, err := RPad.MarshalBinary()
-		if err != nil {
-			return count, err
-		}
-		seedR := b.suite.Hash().Sum(RPadBytes)
-		kBytes := make([]byte, len(ct.cK))
-		b.suite.XOF(seedR).XORKeyStream(kBytes, ct.cK)
-		k := b.suite.Scalar().Zero()
 		err = k.UnmarshalBinary(kBytes)
 		if err != nil {
 			return count, err
@@ -249,7 +259,6 @@ func (b *BTD) BatchCombineOpt(cts []CT, Ks []kyber.Point) (int, error) {
 		if !k.Equal(ct.k) {
 			return count, fmt.Errorf("decryption failed on index %d, wrong k", ct.i)
 		}
-		ks[idx] = k
 		kpCheck, err := b.prf.Puncture(k, ct.i)
 		if err != nil {
 			return count, err
@@ -257,6 +266,25 @@ func (b *BTD) BatchCombineOpt(cts []CT, Ks []kyber.Point) (int, error) {
 		if !kpCheck.Equal(ct.kp) {
 			return count, fmt.Errorf("decryption failed on index %d, wrong kp", ct.i)
 		}
+		ks[idx] = k
+		m := paddedMessage[b.suite.G2().Scalar().MarshalSize():]
+		if !bytes.Equal(m, ct.m) {
+			return count, fmt.Errorf("decryption failed on index %d", ct.i)
+		}
 	}
 	return count, nil
+}
+
+type Hasher struct {
+	hash hash.Hash
+}
+
+func (h *Hasher) Hash(a []byte) []byte {
+	h.hash.Reset()
+	h.hash.Write(a)
+	return h.hash.Sum(nil)
+}
+
+func (h *Hasher) Size() int {
+	return h.hash.Size()
 }

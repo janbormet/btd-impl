@@ -6,11 +6,30 @@ import (
 	"go.dedis.ch/kyber/v4"
 	"go.dedis.ch/kyber/v4/pairing"
 	"math"
+	"time"
 )
 
 func main() {
 	suite := pairing.NewSuiteBn256()
-	B := 100
+	g := make([]kyber.Point, 100000)
+	for i := 0; i < 100000; i++ {
+		g[i] = suite.G2().Point().Pick(suite.RandomStream())
+	}
+	sum := suite.G2().Point().Null()
+	fmt.Println("Start")
+	start := time.Now()
+	for j := 0; j < 100; j++ {
+		for i := 0; i < 100000; i++ {
+			sum = sum.Add(sum, g[i])
+		}
+	}
+	elapsed := time.Since(start)
+	fmt.Println("Elapsed time for 100000 additions:", elapsed)
+}
+
+func main2() {
+	suite := pairing.NewSuiteBn256()
+	B := 500
 	btd := be.NewBTD(suite, B)
 	sk, pk := btd.KeyGen()
 	fmt.Println("Setup succeeded")
