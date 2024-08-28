@@ -4,11 +4,16 @@ import (
 	"crypto/cipher"
 	"fmt"
 	"go.dedis.ch/kyber/v4"
+	"go.dedis.ch/kyber/v4/share"
 )
 
 type ElGamal struct {
-	gr  kyber.Group
-	rng cipher.Stream
+	gr      kyber.Group
+	rng     cipher.Stream
+	PK      kyber.Point
+	Shares  []*share.PriShare
+	Sharing *share.PriPoly
+	n, t    int
 }
 
 func NewElGamal(gr kyber.Group, rng cipher.Stream) *ElGamal {
@@ -24,7 +29,7 @@ type CT struct {
 	m kyber.Point
 }
 
-func (e ElGamal) NullEGct() CT {
+func (e *ElGamal) NullEGct() CT {
 	return CT{
 		A: e.gr.Point().Null(),
 		B: e.gr.Point().Null(),
@@ -32,7 +37,7 @@ func (e ElGamal) NullEGct() CT {
 	}
 }
 
-func (e ElGamal) AddCT(a, b CT) CT {
+func (e *ElGamal) AddCT(a, b CT) CT {
 	return CT{
 		A: e.gr.Point().Add(a.A, b.A),
 		B: e.gr.Point().Add(a.B, b.B),
@@ -40,25 +45,58 @@ func (e ElGamal) AddCT(a, b CT) CT {
 	}
 }
 
-func (e ElGamal) KeyGen() (kyber.Scalar, kyber.Point) {
-	sk := e.gr.Scalar().Pick(e.rng)
-	pk := e.gr.Point().Mul(sk, nil)
-	return sk, pk
+func (e *ElGamal) Sum(c []CT) CT {
+	sum := e.NullEGct()
+	for _, ct := range c {
+		sum = e.AddCT(sum, ct)
+	}
+	return sum
 }
 
-func (e ElGamal) Enc(pk kyber.Point, m kyber.Point) CT {
-	k := e.gr.Scalar().Pick(e.rng) // ephemeral private key
-	A := e.gr.Point().Mul(k, nil)  // ephemeral DH public key
-	S := e.gr.Point().Mul(k, pk)   // ephemeral DH shared secret
+func (e *ElGamal) KeyGen(n, t int) ([]*share.PriShare, kyber.Point) {
+	sk := e.gr.Scalar().Pick(e.rng)
+	sharing := share.NewPriPoly(e.gr, t, sk, e.rng)
+	shares := sharing.Shares(n)
+	pub := sharing.Commit(nil)
+	e.Shares = shares
+	e.PK = pub.Commit()
+	e.Sharing = sharing
+	e.n, e.t = n, t
+	return shares, e.PK
+}
+
+func (e *ElGamal) Enc(pk kyber.Point, m kyber.Point) (CT, kyber.Scalar) {
+	u := e.gr.Scalar().Pick(e.rng) // ephemeral private key
+	A := e.gr.Point().Mul(u, nil)  // ephemeral DH public key
+	S := e.gr.Point().Mul(u, pk)   // ephemeral DH shared secret
 	B := S.Add(S, m)               // message blinded with secret
 	return CT{
 		A: A,
 		B: B,
 		m: m,
+	}, u
+}
+
+func (e *ElGamal) PDec(c CT, i int) *share.PubShare {
+	return &share.PubShare{
+		I: e.Shares[i].I,
+		V: e.gr.Point().Mul(e.Shares[i].V, c.A),
 	}
 }
 
-func (e ElGamal) Dec(sk kyber.Scalar, c CT) (
+func (e *ElGamal) Combine(c CT, shares []*share.PubShare) (kyber.Point, error) {
+	S, err := share.RecoverCommit(e.gr, shares, e.t, e.n)
+	if err != nil {
+		return nil, err
+	}
+	m := e.gr.Point().Sub(c.B, S)
+	if !c.m.Equal(m) {
+		return nil, fmt.Errorf("elgamal decryption failed")
+	}
+	return m, nil
+}
+
+func (e *ElGamal) Dec(sk kyber.Scalar, c CT) (
 	message kyber.Point, err error) {
 
 	S := e.gr.Point().Mul(sk, c.A)
