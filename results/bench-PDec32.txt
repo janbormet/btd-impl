@@ -1,0 +1,9 @@
+goos: linux
+goarch: amd64
+pkg: btd
+cpu: AMD Ryzen 7 5800X 8-Core Processor             
+BenchmarkPDec32/normal:_B=32-16         	    2000	  24586894 ns/op
+BenchmarkPDec32/sqrt:_B=32-16           	    2000	  24819448 ns/op
+BenchmarkPDec32/sqrtlog:_B=32-16        	    2000	  26042899 ns/op
+PASS
+ok  	btd	153.474s

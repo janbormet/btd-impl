@@ -7,6 +7,7 @@ import (
 	"go.dedis.ch/kyber/v4/pairing"
 	"go.dedis.ch/kyber/v4/share"
 	"math"
+	"sync"
 	"testing"
 )
 
@@ -305,4 +306,83 @@ func testCombineSqrtOpt(b *testing.B, R, B, t int, btd *be.BTD, ctsR [][]be.CT) 
 			}
 		}
 	}
+}
+
+func testCombineSqrtOptParallel(b *testing.B, R, B, t int, btd *be.BTD, ctsR [][]be.CT) {
+	SubCtsR := make([][][]be.CT, R)
+	sqrtB := int(math.Floor(math.Sqrt(float64(B))))
+	for r := 0; r < R; r++ {
+		SubCtsR[r] = make([][]be.CT, sqrtB)
+		for j := 0; j < sqrtB; j++ {
+			start := j * sqrtB
+			end := (j + 1) * sqrtB
+			if j == sqrtB-1 {
+				end = B
+			}
+			SubCtsR[r][j] = ctsR[r][start:end]
+		}
+	}
+	pdecs := make([][][][]*share.PubShare, R)
+	for r := 0; r < R; r++ {
+		pdecs[r] = make([][][]*share.PubShare, sqrtB)
+		for j := 0; j < sqrtB; j++ {
+			pdecs[r][j] = make([][]*share.PubShare, t)
+			for thresh := 0; thresh < t; thresh++ {
+				d, err := btd.BatchDecOpt(SubCtsR[r][j], thresh, false)
+				if err != nil {
+					panic(err)
+				}
+				pdecs[r][j][thresh] = d
+			}
+
+		}
+	}
+	b.ResetTimer()
+	wg := sync.WaitGroup{}
+	for i := 0; i < b.N; i++ {
+		for j := 0; j < sqrtB; j++ {
+			wg.Add(1)
+			go func(ctsSubBatch []be.CT, shares [][]*share.PubShare) {
+				defer wg.Done()
+				_, err := btd.BatchCombineOpt(ctsSubBatch, shares, false)
+				if err != nil {
+					panic(err)
+				}
+			}(SubCtsR[i%R][j], pdecs[i%R][j])
+		}
+	}
+	wg.Wait()
+	b.StopTimer()
+}
+
+func BenchmarkBatchCombinePar(b *testing.B) {
+	suite := pairing.NewSuiteBn256()
+	B := 512
+	btd := be.NewBTD(suite, B)
+	n := 10
+	t := 2
+	R := 50
+	Ms := make([]kyber.Point, R)
+	for i := 0; i < R; i++ {
+		Ms[i] = suite.GT().Point().Pick(suite.RandomStream())
+
+	}
+	_, pk := btd.KeyGen(n, t)
+	ctsR := make([][]be.CT, R)
+	for j := 0; j < R; j++ {
+		cts := make([]be.CT, B)
+		for i := 0; i < B; i++ {
+			ct, err := btd.Enc(pk, i, Ms[j])
+			if err != nil {
+				b.Error(err)
+			}
+			cts[i] = ct
+		}
+		ctsR[j] = cts
+	}
+
+	b.Run(fmt.Sprintf("parallel-sqrtlog: B=%d", B), func(b *testing.B) {
+		testCombineSqrtOptParallel(b, R, B, t, btd, ctsR)
+	})
+
 }
