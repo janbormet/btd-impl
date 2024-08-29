@@ -205,7 +205,7 @@ func (b *BTD) BatchDecOpt(cts []CT, i int, verify bool) ([]*share.PubShare, erro
 	return Ks, nil
 }
 
-func (b *BTD) BatchCombineOpt(cts []CT, ShareKs [][]*share.PubShare, verify bool) (int, error) {
+func (b *BTD) BatchCombineOptOld(cts []CT, ShareKs [][]*share.PubShare, verify bool) (int, error) {
 	count := 0
 	L := len(cts)
 	if L > b.B {
@@ -257,6 +257,194 @@ func (b *BTD) BatchCombineOpt(cts []CT, ShareKs [][]*share.PubShare, verify bool
 			if KsIdx < len(Ks) && j == nextStart {
 				count++
 				eval, err = b.prf.ExpEval(Ks[KsIdx], ct.i)
+				if err != nil {
+					return count, err
+				}
+				sum = b.suite.GT().Point().Add(sum, eval)
+				break
+			}
+			count++
+			eval, err = b.prf.PEval(cts[j].kp, cts[j].i, ct.i)
+			if err != nil {
+				return count, err
+			}
+			sum = b.suite.GT().Point().Add(sum, eval)
+
+		}
+		m := b.suite.GT().Point().Sub(b.suite.GT().Point().Add(ct.gamma, sum), prfKi)
+		if !m.Equal(ct.m) {
+			return count, fmt.Errorf("decryption failed on index %d", ct.i)
+		}
+	}
+	return count, nil
+}
+
+func (b *BTD) BatchCombineOpt(cts []CT, ShareKs [][]*share.PubShare, verify bool) (int, error) {
+	count := 0
+	L := len(cts)
+	if L > b.B {
+		return count, fmt.Errorf("too many ciphertexts for the given crs")
+	}
+	lgL := int(math.Ceil(math.Log2(float64(L))))
+	Ks := make([]kyber.Point, lgL)
+	for l := 0; l < lgL; l++ {
+		x := math.Pow(2, float64(l))
+		start := int(math.Floor(float64(L) * (x - 1.0) / x))
+		shares := make([]*share.PubShare, len(ShareKs))
+		for j, s := range ShareKs {
+			shares[j] = s[l]
+		}
+		C, err := b.SumEGCt(cts[start:], verify)
+		if err != nil {
+			return count, err
+		}
+		Ks[l], err = b.eg.Combine(C, shares)
+		if err != nil {
+			return count, err
+		}
+	}
+	KsIdx := 1
+	oldStart := 0
+	for idx, ct := range cts {
+		count++
+		sum := b.suite.GT().Point().Null()
+		x := math.Pow(2, float64(KsIdx))
+		nextStart := int(math.Floor(float64(L) * (x - 1.0) / x))
+
+		if idx >= nextStart && KsIdx+1 < len(Ks) {
+			KsIdx++
+			oldStart = nextStart
+			nextX := math.Pow(2, float64(KsIdx))
+			nextNextStart := int(math.Floor(float64(L) * (nextX - 1.0) / nextX))
+			nextStart = nextNextStart
+		}
+		prfKi, err := b.prf.ExpEval(Ks[KsIdx-1], ct.i)
+		if err != nil {
+			return count, err
+		}
+		if idx > oldStart {
+			for j := oldStart; j < idx; j++ {
+				count++
+				peval, err := b.prf.PEval(cts[j].kp, cts[j].i, ct.i)
+				if err != nil {
+					return count, err
+				}
+				sum = b.suite.GT().Point().Add(sum, peval)
+			}
+		}
+		for j := idx + 1; j < L; j++ {
+			var eval kyber.Point
+
+			if KsIdx < len(Ks) && j == nextStart {
+				count++
+				eval, err = b.prf.ExpEval(Ks[KsIdx], ct.i)
+				if err != nil {
+					return count, err
+				}
+				sum = b.suite.GT().Point().Add(sum, eval)
+				break
+			}
+			count++
+			eval, err = b.prf.PEval(cts[j].kp, cts[j].i, ct.i)
+			if err != nil {
+				return count, err
+			}
+			sum = b.suite.GT().Point().Add(sum, eval)
+
+		}
+		m := b.suite.GT().Point().Sub(b.suite.GT().Point().Add(ct.gamma, sum), prfKi)
+		if !m.Equal(ct.m) {
+			return count, fmt.Errorf("decryption failed on index %d", ct.i)
+		}
+	}
+	return count, nil
+}
+
+func (b *BTD) BatchCombineOptNotWorking(cts []CT, SharesK []*share.PubShare, SharesKUpper [][]*share.PubShare, SharesKLower [][]*share.PubShare, verify bool) (int, error) {
+	count := 0
+	L := len(cts)
+	if L > b.B {
+		return count, fmt.Errorf("too many ciphertexts for the given crs")
+	}
+	lgL := int(math.Ceil(math.Log2(float64(L))))
+	C, err := b.SumEGCt(cts, verify)
+	if err != nil {
+		return count, err
+	}
+	K, err := b.eg.Combine(C, SharesK)
+	if err != nil {
+		return count, err
+	}
+	KUpper := make([]kyber.Point, lgL-1)
+	KLower := make([]kyber.Point, lgL-1)
+	for l := 1; l < lgL; l++ {
+		x := math.Pow(2, float64(l))
+		start := int(math.Floor(float64(L) * (x - 1.0) / x))
+		sharesUpper := make([]*share.PubShare, len(SharesKUpper))
+		sharesLower := make([]*share.PubShare, len(SharesKLower))
+		for j, s := range SharesKUpper {
+			sharesUpper[j] = s[l-1]
+		}
+		for j, s := range SharesKLower {
+			sharesLower[j] = s[l-1]
+		}
+		CUpper, err := b.SumEGCt(cts[start:], verify)
+		if err != nil {
+			return count, err
+		}
+		CLower, err := b.SumEGCt(cts[:start], verify)
+		if err != nil {
+			return count, err
+		}
+		KUpper[l-1], err = b.eg.Combine(CUpper, sharesUpper)
+		if err != nil {
+			return count, err
+		}
+		KLower[l-1], err = b.eg.Combine(CLower, sharesLower)
+	}
+	UpperIdx := 0
+	LowerIdx := -1
+	oldStart := 0
+	oldNextStart := 0
+	for idx, ct := range cts {
+		count++
+		prfKi, err := b.prf.ExpEval(K, ct.i)
+		if err != nil {
+			return count, err
+		}
+		sum := b.suite.GT().Point().Null()
+		x := math.Pow(2, float64(UpperIdx+1))
+		nextStart := int(math.Floor(float64(L) * (x - 1.0) / x))
+		if idx >= nextStart {
+			UpperIdx++
+			LowerIdx++
+			oldStart = oldNextStart
+		}
+		oldNextStart = nextStart
+		if idx > 0 {
+			for j := idx - 1; j >= 0; j-- {
+				if LowerIdx >= 0 && LowerIdx < len(KLower) && j == oldStart {
+					count++
+					eval, err := b.prf.ExpEval(KLower[LowerIdx], ct.i)
+					if err != nil {
+						return count, err
+					}
+					sum = b.suite.GT().Point().Add(sum, eval)
+					break
+				}
+				count++
+				peval, err := b.prf.PEval(cts[j].kp, cts[j].i, ct.i)
+				if err != nil {
+					return count, err
+				}
+				sum = b.suite.GT().Point().Add(sum, peval)
+			}
+		}
+		for j := idx + 1; j < L; j++ {
+			var eval kyber.Point
+			if UpperIdx < len(KUpper) && j == nextStart {
+				count++
+				eval, err = b.prf.ExpEval(KUpper[UpperIdx], ct.i)
 				if err != nil {
 					return count, err
 				}

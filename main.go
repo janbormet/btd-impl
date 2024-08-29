@@ -30,7 +30,7 @@ func main2() {
 
 func main() {
 	suite := pairing.NewSuiteBn256()
-	B := 16
+	B := 8
 	n := 10
 	t := 5
 	btd := be.NewBTD(suite, B)
