@@ -59,7 +59,7 @@ func testNaive(btd *be.BTD, cts []be.CT) {
 			panic(err)
 		}
 	}
-	count, err := btd.BatchCombine(cts, d)
+	count, err := btd.BatchCombine(cts, d, false)
 	if err != nil {
 		panic(err)
 	}
@@ -76,7 +76,7 @@ func testOpt(btd *be.BTD, cts []be.CT) {
 			panic(err)
 		}
 	}
-	count, err := btd.BatchCombineOpt(cts, ds)
+	count, err := btd.BatchCombineOpt(cts, ds, false)
 	if err != nil {
 		panic(err)
 	}
@@ -101,7 +101,7 @@ func testOptSqrt(btd *be.BTD, cts []be.CT) {
 				panic(err)
 			}
 		}
-		x, err := btd.BatchCombineOpt(cts[start:end], ds)
+		x, err := btd.BatchCombineOpt(cts[start:end], ds, false)
 		if err != nil {
 			panic(err)
 		}

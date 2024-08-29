@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go.dedis.ch/kyber/v4"
 	"go.dedis.ch/kyber/v4/pairing"
+	"sync"
 )
 
 type mkey struct {
@@ -22,7 +23,7 @@ type PRF struct {
 	suite  *pairing.SuiteBn256
 }
 
-func PRFSetup(suite *pairing.SuiteBn256, B int) *PRF {
+func PRFSetup(suite *pairing.SuiteBn256, B int, parallel bool) *PRF {
 	setup := &PRF{
 		xi:     make([]kyber.Scalar, B),
 		zi:     make([]kyber.Scalar, B),
@@ -40,12 +41,52 @@ func PRFSetup(suite *pairing.SuiteBn256, B int) *PRF {
 		setup.g2zi[i] = suite.G2().Point().Mul(setup.zi[i], nil)
 		setup.gTzi[i] = suite.GT().Point().Mul(setup.zi[i], nil)
 	}
-	for i := 0; i < B; i++ {
-		for j := 0; j < B; j++ {
-			setup.g2zixj[mkey{
-				i: i,
-				j: j,
-			}] = suite.G2().Point().Mul(suite.Scalar().Div(setup.zi[i], setup.xi[j]), nil)
+	if !parallel {
+		for i := 0; i < B; i++ {
+			for j := 0; j < B; j++ {
+				setup.g2zixj[mkey{
+					i: i,
+					j: j,
+				}] = suite.G2().Point().Mul(suite.Scalar().Div(setup.zi[i], setup.xi[j]), nil)
+			}
+		}
+		return setup
+	}
+
+	wg := sync.WaitGroup{}
+	const PAR = 16
+	wg.Add(PAR)
+	buffer := make([][]struct {
+		mkey
+		kyber.Point
+	}, PAR)
+	for p := 0; p < PAR; p++ {
+		start := p * (B / PAR)
+		end := (p + 1) * (B / PAR)
+		if p == PAR-1 {
+			end = B
+		}
+		go func(instance, start, end int) {
+			buffer[instance] = make([]struct {
+				mkey
+				kyber.Point
+			}, B*(end-start))
+			for i := start; i < end; i++ {
+				for j := 0; j < B; j++ {
+					buffer[instance][(i-start)*B+j].mkey = mkey{
+						i: i,
+						j: j,
+					}
+					buffer[instance][(i-start)*B+j].Point = suite.G2().Point().Mul(suite.Scalar().Div(setup.zi[i], setup.xi[j]), nil)
+				}
+			}
+			wg.Done()
+		}(p, start, end)
+	}
+	wg.Wait()
+	for i := 0; i < PAR; i++ {
+		for _, elem := range buffer[i] {
+			setup.g2zixj[elem.mkey] = elem.Point
 		}
 	}
 	return setup

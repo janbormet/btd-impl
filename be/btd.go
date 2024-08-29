@@ -64,7 +64,7 @@ func (b *BTD) VerifyCT(ct CT) bool {
 }
 
 func NewBTD(suite *pairing.SuiteBn256, B int) *BTD {
-	prf := prf.PRFSetup(suite, B)
+	prf := prf.PRFSetup(suite, B, true)
 	eg := elgamal.NewElGamal(suite.G1(), suite.RandomStream())
 	return &BTD{
 		suite: suite,
@@ -133,12 +133,13 @@ func (b *BTD) BatchDec(cts []CT, i int, verify bool) (*share.PubShare, error) {
 	return b.eg.PDec(C, i), nil
 }
 
-func (b *BTD) BatchCombine(cts []CT, d []*share.PubShare) (int, error) {
+func (b *BTD) BatchCombine(cts []CT, d []*share.PubShare, verify bool) (int, error) {
 	count := 0
-	if len(cts) > b.B {
+	ActualB := len(cts)
+	if ActualB > b.B {
 		return count, fmt.Errorf("too many ciphertexts for the given crs")
 	}
-	C, err := b.SumEGCt(cts, true)
+	C, err := b.SumEGCt(cts, verify)
 	if err != nil {
 		return count, err
 	}
@@ -153,13 +154,19 @@ func (b *BTD) BatchCombine(cts []CT, d []*share.PubShare) (int, error) {
 			return count, err
 		}
 		sum := b.suite.GT().Point().Null()
-		for j := 0; j < b.B; j++ {
-			if j == ct.i {
+		for j := 0; j < ActualB; j++ {
+			ji := cts[j].i
+			if ji == ct.i {
 				continue
 			}
 			count++
-			peval, err := b.prf.PEval(cts[j].kp, cts[j].i, ct.i)
+			peval, err := b.prf.PEval(cts[j].kp, ji, ct.i)
 			if err != nil {
+				str := fmt.Sprintf("PEval on puncutured index %d on index %d failed: ", cts[j].i, ct.i)
+				for _, c := range cts {
+					str += fmt.Sprintf("%d ", c.i)
+				}
+				panic(str)
 				return count, err
 			}
 			sum = b.suite.GT().Point().Add(sum, peval)
@@ -198,7 +205,7 @@ func (b *BTD) BatchDecOpt(cts []CT, i int, verify bool) ([]*share.PubShare, erro
 	return Ks, nil
 }
 
-func (b *BTD) BatchCombineOpt(cts []CT, ShareKs [][]*share.PubShare) (int, error) {
+func (b *BTD) BatchCombineOpt(cts []CT, ShareKs [][]*share.PubShare, verify bool) (int, error) {
 	count := 0
 	L := len(cts)
 	if L > b.B {
@@ -213,7 +220,7 @@ func (b *BTD) BatchCombineOpt(cts []CT, ShareKs [][]*share.PubShare) (int, error
 		for j, s := range ShareKs {
 			shares[j] = s[l]
 		}
-		C, err := b.SumEGCt(cts[start:], false)
+		C, err := b.SumEGCt(cts[start:], verify)
 		if err != nil {
 			return count, err
 		}
