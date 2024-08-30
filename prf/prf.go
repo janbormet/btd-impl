@@ -1,9 +1,9 @@
 package prf
 
 import (
+	"btd/curves"
 	"fmt"
 	"go.dedis.ch/kyber/v4"
-	"go.dedis.ch/kyber/v4/pairing"
 	"sync"
 )
 
@@ -20,10 +20,10 @@ type PRF struct {
 	G1xi   []kyber.Point
 	g2zixj map[mkey]kyber.Point
 	B      int
-	suite  pairing.Suite
+	suite  curves.Suite
 }
 
-func PRFSetup(suite pairing.Suite, B int, parallel bool) *PRF {
+func PRFSetup(suite curves.Suite, B int, parallel bool) *PRF {
 	setup := &PRF{
 		xi:     make([]kyber.Scalar, B),
 		zi:     make([]kyber.Scalar, B),
@@ -37,9 +37,9 @@ func PRFSetup(suite pairing.Suite, B int, parallel bool) *PRF {
 	for i := 0; i < B; i++ {
 		setup.xi[i] = suite.G1().Scalar().Pick(suite.RandomStream())
 		setup.zi[i] = suite.G2().Scalar().Pick(suite.RandomStream())
-		setup.G1xi[i] = suite.G1().Point().Mul(setup.xi[i], nil)
-		setup.g2zi[i] = suite.G2().Point().Mul(setup.zi[i], nil)
-		setup.gTzi[i] = suite.GT().Point().Mul(setup.zi[i], nil)
+		setup.G1xi[i] = suite.G1().Point().Mul(setup.xi[i], suite.G1().Point().Base())
+		setup.g2zi[i] = suite.G2().Point().Mul(setup.zi[i], suite.G2().Point().Base())
+		setup.gTzi[i] = suite.GT().Point().Mul(setup.zi[i], suite.GTBase())
 	}
 	if !parallel {
 		for i := 0; i < B; i++ {
@@ -47,7 +47,7 @@ func PRFSetup(suite pairing.Suite, B int, parallel bool) *PRF {
 				setup.g2zixj[mkey{
 					i: i,
 					j: j,
-				}] = suite.G2().Point().Mul(suite.G2().Scalar().Div(setup.zi[i], setup.xi[j]), nil)
+				}] = suite.G2().Point().Mul(suite.G2().Scalar().Div(setup.zi[i], setup.xi[j]), suite.G2().Point().Base())
 			}
 		}
 		return setup
@@ -77,7 +77,7 @@ func PRFSetup(suite pairing.Suite, B int, parallel bool) *PRF {
 						i: i,
 						j: j,
 					}
-					buffer[instance][(i-start)*B+j].Point = suite.G2().Point().Mul(suite.G2().Scalar().Div(setup.zi[i], setup.xi[j]), nil)
+					buffer[instance][(i-start)*B+j].Point = suite.G2().Point().Mul(suite.G2().Scalar().Div(setup.zi[i], setup.xi[j]), suite.G2().Point().Base())
 				}
 			}
 			wg.Done()

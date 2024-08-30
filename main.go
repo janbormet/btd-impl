@@ -2,62 +2,53 @@ package main
 
 import (
 	"btd/be"
+	"btd/curves"
 	"fmt"
 	"go.dedis.ch/kyber/v4"
+	"go.dedis.ch/kyber/v4/pairing"
 	"go.dedis.ch/kyber/v4/pairing/bls12381/circl"
+	"go.dedis.ch/kyber/v4/pairing/bls12381/kilic"
 	"go.dedis.ch/kyber/v4/pairing/bn254"
+	"go.dedis.ch/kyber/v4/pairing/bn256"
 	"go.dedis.ch/kyber/v4/share"
 	"math"
 	"time"
 )
 
+func testPairing(suite pairing.Suite, name string, N int) {
+	g1 := make([]kyber.Point, N)
+	g2 := make([]kyber.Point, N)
+	gt := make([]kyber.Point, N)
+	for i := 0; i < N; i++ {
+		g1[i] = suite.G1().Point().Pick(suite.RandomStream())
+		g2[i] = suite.G2().Point().Pick(suite.RandomStream())
+	}
+	fmt.Println("Start")
+	start := time.Now()
+	for j := 0; j < N; j++ {
+		gt[j] = suite.Pair(g1[j], g2[j])
+	}
+	elapsed := time.Since(start)
+	fmt.Printf("%s: Elapsed time for %d pairings: %s\n", name, N, elapsed)
+}
+
+func pairingTest() {
+	testPairing(bn254.NewSuiteBn254(), "BN254", 1000)
+	testPairing(bn256.NewSuiteBn256(), "BN256", 1000)
+	testPairing(circl.NewSuiteBLS12381(), "BLS12381-circl", 1000)
+	testPairing(kilic.NewBLS12381Suite(), "BLS12381-kilic", 1000)
+}
+
 func main() {
-	suite := bn254.NewSuiteBn254()
-	N := 1000
-	g1 := make([]kyber.Point, N)
-	g2 := make([]kyber.Point, N)
-	gt := make([]kyber.Point, N)
-	for i := 0; i < N; i++ {
-		g1[i] = suite.G1().Point().Pick(suite.RandomStream())
-		g2[i] = suite.G2().Point().Pick(suite.RandomStream())
-	}
-	fmt.Println("Start")
-	start := time.Now()
-	for j := 0; j < N; j++ {
-		gt[j] = suite.Pair(g1[j], g2[j])
-	}
-	elapsed := time.Since(start)
-	fmt.Printf("BN: Elapsed time for %d pairings: %s\n", N, elapsed)
-}
-
-func main2() {
-	suite := circl.NewSuiteBLS12381()
-	N := 1000
-	g1 := make([]kyber.Point, N)
-	g2 := make([]kyber.Point, N)
-	gt := make([]kyber.Point, N)
-	for i := 0; i < N; i++ {
-		g1[i] = suite.G1().Point().Pick(suite.RandomStream())
-		g2[i] = suite.G2().Point().Pick(suite.RandomStream())
-	}
-	fmt.Println("Start")
-	start := time.Now()
-	for j := 0; j < N; j++ {
-		gt[j] = suite.Pair(g1[j], g2[j])
-	}
-	elapsed := time.Since(start)
-	fmt.Printf("BLS: Elapsed time for %d pairings: %s\n", N, elapsed)
-}
-
-func mainActual() {
-	suite := bn254.NewSuiteBn254()
+	suite := curves.NewSuite(kilic.NewSuiteBLS12381())
+	suite.G1().Point().Base()
 	B := 8
 	n := 10
 	t := 5
 	btd := be.NewBTD(suite, B)
 	_, pk := btd.KeyGen(n, t)
 	fmt.Println("Setup succeeded")
-	m := suite.GT().Point().Pick(suite.RandomStream())
+	m := suite.PickGT()
 	cts := make([]be.CT, B)
 	for i := 0; i < B; i++ {
 		ct, err := btd.Enc(pk, i, m)

@@ -1,9 +1,9 @@
 package be
 
 import (
+	"btd/curves"
 	"btd/elgamal"
 	"btd/prf"
-	"crypto/sha512"
 	"fmt"
 	"go.dedis.ch/kyber/v4"
 	"go.dedis.ch/kyber/v4/pairing"
@@ -63,7 +63,7 @@ func (b *BTD) VerifyCT(ct CT) bool {
 	return true
 }
 
-func NewBTD(suite pairing.Suite, B int) *BTD {
+func NewBTD(suite curves.Suite, B int) *BTD {
 	prf := prf.PRFSetup(suite, B, true)
 	eg := elgamal.NewElGamal(suite.G1(), suite.RandomStream())
 	return &BTD{
@@ -495,7 +495,8 @@ func (h *Hasher) Size() int {
 }
 
 func (b *BTD) SHash(pk kyber.Point, c CT, Ap, Bp, yp kyber.Point) (kyber.Scalar, error) {
-	h := sha512.New()
+	h := b.suite.Hash()
+	h.Reset()
 	if _, err := h.Write([]byte("pp")); err != nil { // Replace with actual setup
 		return nil, err
 

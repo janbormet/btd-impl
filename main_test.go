@@ -2,23 +2,30 @@ package main_test
 
 import (
 	"btd/be"
+	"btd/curves"
 	"fmt"
 	"go.dedis.ch/kyber/v4"
-	"go.dedis.ch/kyber/v4/pairing"
+	"go.dedis.ch/kyber/v4/pairing/bls12381/kilic"
 	"go.dedis.ch/kyber/v4/share"
 	"math"
 	"sync"
 	"testing"
 )
 
+var Suite curves.Suite
+
+func init() {
+	Suite = curves.NewSuite(kilic.NewSuiteBLS12381())
+}
+
 func BenchmarkEnc(b *testing.B) {
-	suite := pairing.NewSuiteBn256()
+	suite := Suite
 	B := 16
 	btd := be.NewBTD(suite, B)
 	R := 100
 	Ms := make([]kyber.Point, R)
 	for i := 0; i < R; i++ {
-		Ms[i] = suite.GT().Point().Pick(suite.RandomStream())
+		Ms[i] = suite.PickGT()
 	}
 	n := 10
 	t := 5
@@ -49,14 +56,14 @@ func BenchmarkPDec512(b *testing.B) {
 }
 
 func testBenchmarkPDec(b *testing.B, B int) {
-	suite := pairing.NewSuiteBn256()
+	suite := Suite
 	btd := be.NewBTD(suite, B)
 	n := 10
 	t := 5
 	R := 50
 	Ms := make([]kyber.Point, R)
 	for i := 0; i < R; i++ {
-		Ms[i] = suite.GT().Point().Pick(suite.RandomStream())
+		Ms[i] = suite.PickGT()
 
 	}
 	_, pk := btd.KeyGen(n, t)
@@ -168,14 +175,14 @@ func BenchmarkBatchCombine512Fast(b *testing.B) {
 }
 
 func testBenchmarkBatchCombine(b *testing.B, B int, slow bool) {
-	suite := pairing.NewSuiteBn256()
+	suite := Suite
 	btd := be.NewBTD(suite, B)
 	n := 10
 	t := 2
 	R := 50
 	Ms := make([]kyber.Point, R)
 	for i := 0; i < R; i++ {
-		Ms[i] = suite.GT().Point().Pick(suite.RandomStream())
+		Ms[i] = suite.PickGT()
 
 	}
 	_, pk := btd.KeyGen(n, t)
@@ -356,7 +363,7 @@ func testCombineSqrtOptParallel(b *testing.B, R, B, t int, btd *be.BTD, ctsR [][
 }
 
 func BenchmarkBatchCombinePar(b *testing.B) {
-	suite := pairing.NewSuiteBn256()
+	suite := Suite
 	B := 512
 	btd := be.NewBTD(suite, B)
 	n := 10
@@ -364,7 +371,7 @@ func BenchmarkBatchCombinePar(b *testing.B) {
 	R := 50
 	Ms := make([]kyber.Point, R)
 	for i := 0; i < R; i++ {
-		Ms[i] = suite.GT().Point().Pick(suite.RandomStream())
+		Ms[i] = suite.PickGT()
 
 	}
 	_, pk := btd.KeyGen(n, t)
