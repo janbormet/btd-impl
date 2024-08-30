@@ -4,32 +4,53 @@ import (
 	"btd/be"
 	"fmt"
 	"go.dedis.ch/kyber/v4"
-	"go.dedis.ch/kyber/v4/pairing"
+	"go.dedis.ch/kyber/v4/pairing/bls12381/circl"
+	"go.dedis.ch/kyber/v4/pairing/bn254"
 	"go.dedis.ch/kyber/v4/share"
 	"math"
 	"time"
 )
 
-func main2() {
-	suite := pairing.NewSuiteBn256()
-	g := make([]kyber.Point, 100000)
-	for i := 0; i < 100000; i++ {
-		g[i] = suite.G2().Point().Pick(suite.RandomStream())
+func main() {
+	suite := bn254.NewSuiteBn254()
+	N := 1000
+	g1 := make([]kyber.Point, N)
+	g2 := make([]kyber.Point, N)
+	gt := make([]kyber.Point, N)
+	for i := 0; i < N; i++ {
+		g1[i] = suite.G1().Point().Pick(suite.RandomStream())
+		g2[i] = suite.G2().Point().Pick(suite.RandomStream())
 	}
-	sum := suite.G2().Point().Null()
 	fmt.Println("Start")
 	start := time.Now()
-	for j := 0; j < 100; j++ {
-		for i := 0; i < 100000; i++ {
-			sum = sum.Add(sum, g[i])
-		}
+	for j := 0; j < N; j++ {
+		gt[j] = suite.Pair(g1[j], g2[j])
 	}
 	elapsed := time.Since(start)
-	fmt.Println("Elapsed time for 100000 additions:", elapsed)
+	fmt.Printf("BN: Elapsed time for %d pairings: %s\n", N, elapsed)
 }
 
-func main() {
-	suite := pairing.NewSuiteBn256()
+func main2() {
+	suite := circl.NewSuiteBLS12381()
+	N := 1000
+	g1 := make([]kyber.Point, N)
+	g2 := make([]kyber.Point, N)
+	gt := make([]kyber.Point, N)
+	for i := 0; i < N; i++ {
+		g1[i] = suite.G1().Point().Pick(suite.RandomStream())
+		g2[i] = suite.G2().Point().Pick(suite.RandomStream())
+	}
+	fmt.Println("Start")
+	start := time.Now()
+	for j := 0; j < N; j++ {
+		gt[j] = suite.Pair(g1[j], g2[j])
+	}
+	elapsed := time.Since(start)
+	fmt.Printf("BLS: Elapsed time for %d pairings: %s\n", N, elapsed)
+}
+
+func mainActual() {
+	suite := bn254.NewSuiteBn254()
 	B := 8
 	n := 10
 	t := 5

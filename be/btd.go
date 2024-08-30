@@ -31,7 +31,7 @@ type CT struct {
 }
 
 type BTD struct {
-	suite *pairing.SuiteBn256
+	suite pairing.Suite
 	prf   *prf.PRF
 	eg    *elgamal.ElGamal
 	B     int
@@ -63,7 +63,7 @@ func (b *BTD) VerifyCT(ct CT) bool {
 	return true
 }
 
-func NewBTD(suite *pairing.SuiteBn256, B int) *BTD {
+func NewBTD(suite pairing.Suite, B int) *BTD {
 	prf := prf.PRFSetup(suite, B, true)
 	eg := elgamal.NewElGamal(suite.G1(), suite.RandomStream())
 	return &BTD{

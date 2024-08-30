@@ -20,10 +20,10 @@ type PRF struct {
 	G1xi   []kyber.Point
 	g2zixj map[mkey]kyber.Point
 	B      int
-	suite  *pairing.SuiteBn256
+	suite  pairing.Suite
 }
 
-func PRFSetup(suite *pairing.SuiteBn256, B int, parallel bool) *PRF {
+func PRFSetup(suite pairing.Suite, B int, parallel bool) *PRF {
 	setup := &PRF{
 		xi:     make([]kyber.Scalar, B),
 		zi:     make([]kyber.Scalar, B),
@@ -47,7 +47,7 @@ func PRFSetup(suite *pairing.SuiteBn256, B int, parallel bool) *PRF {
 				setup.g2zixj[mkey{
 					i: i,
 					j: j,
-				}] = suite.G2().Point().Mul(suite.Scalar().Div(setup.zi[i], setup.xi[j]), nil)
+				}] = suite.G2().Point().Mul(suite.G2().Scalar().Div(setup.zi[i], setup.xi[j]), nil)
 			}
 		}
 		return setup
@@ -77,7 +77,7 @@ func PRFSetup(suite *pairing.SuiteBn256, B int, parallel bool) *PRF {
 						i: i,
 						j: j,
 					}
-					buffer[instance][(i-start)*B+j].Point = suite.G2().Point().Mul(suite.Scalar().Div(setup.zi[i], setup.xi[j]), nil)
+					buffer[instance][(i-start)*B+j].Point = suite.G2().Point().Mul(suite.G2().Scalar().Div(setup.zi[i], setup.xi[j]), nil)
 				}
 			}
 			wg.Done()
@@ -93,11 +93,11 @@ func PRFSetup(suite *pairing.SuiteBn256, B int, parallel bool) *PRF {
 }
 
 func (f *PRF) KeyGen() kyber.Scalar {
-	return f.suite.Scalar().Pick(f.suite.RandomStream())
+	return f.suite.G1().Scalar().Pick(f.suite.RandomStream())
 }
 
 func (f *PRF) SumKeys(k []kyber.Scalar) kyber.Scalar {
-	sum := f.suite.Scalar().Zero()
+	sum := f.suite.G1().Scalar().Zero()
 	for _, ki := range k {
 		sum = sum.Add(sum, ki)
 	}
