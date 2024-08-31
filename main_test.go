@@ -15,7 +15,7 @@ import (
 var Suite curves.Suite
 
 func init() {
-	Suite = curves.NewSuite(kilic.NewSuiteBLS12381())
+	Suite = curves.NewSuite(kilic.NewBLS12381Suite())
 }
 
 func BenchmarkEnc(b *testing.B) {
@@ -86,9 +86,9 @@ func testBenchmarkPDec(b *testing.B, B int) {
 	b.Run(fmt.Sprintf("sqrt: B=%d", B), func(b *testing.B) {
 		testBatchDecSqrt(b, R, B, btd, ctsR)
 	})
-	b.Run(fmt.Sprintf("sqrtlog: B=%d", B), func(b *testing.B) {
-		testBatchDecSqrtLog(b, R, B, btd, ctsR)
-	})
+	//b.Run(fmt.Sprintf("sqrtlog: B=%d", B), func(b *testing.B) {
+	//	testBatchDecSqrtLog(b, R, B, btd, ctsR)
+	//})
 
 }
 
@@ -207,10 +207,10 @@ func testBenchmarkBatchCombine(b *testing.B, B int, slow bool) {
 		b.Run(fmt.Sprintf("sqrt: B=%d", B), func(b *testing.B) {
 			testCombineSqrt(b, R, B, t, btd, ctsR)
 		})
-		b.Run(fmt.Sprintf("sqrtlog: B=%d", B), func(b *testing.B) {
-			testCombineSqrtOpt(b, R, B, t, btd, ctsR)
+		//b.Run(fmt.Sprintf("sqrtlog: B=%d", B), func(b *testing.B) {
+		//	testCombineSqrtOpt(b, R, B, t, btd, ctsR)
 
-		})
+		//})
 	}
 }
 
@@ -362,7 +362,7 @@ func testCombineSqrtOptParallel(b *testing.B, R, B, t int, btd *be.BTD, ctsR [][
 	b.StopTimer()
 }
 
-func BenchmarkBatchCombinePar(b *testing.B) {
+func BenchmarkBatchCombineParSqrt(b *testing.B) {
 	suite := Suite
 	B := 512
 	btd := be.NewBTD(suite, B)
@@ -388,8 +388,58 @@ func BenchmarkBatchCombinePar(b *testing.B) {
 		ctsR[j] = cts
 	}
 
-	b.Run(fmt.Sprintf("parallel-sqrtlog: B=%d", B), func(b *testing.B) {
-		testCombineSqrtOptParallel(b, R, B, t, btd, ctsR)
+	b.Run(fmt.Sprintf("parallel-sqrt: B=%d", 128), func(b *testing.B) {
+		testCombineSqrtParallel(b, R, 128, t, btd, ctsR)
 	})
 
+	b.Run(fmt.Sprintf("parallel-sqrt: B=%d", 512), func(b *testing.B) {
+		testCombineSqrtParallel(b, R, 512, t, btd, ctsR)
+	})
+}
+
+func testCombineSqrtParallel(b *testing.B, R, B, t int, btd *be.BTD, ctsR [][]be.CT) {
+	SubCtsR := make([][][]be.CT, R)
+	sqrtB := int(math.Floor(math.Sqrt(float64(B))))
+	for r := 0; r < R; r++ {
+		SubCtsR[r] = make([][]be.CT, sqrtB)
+		for j := 0; j < sqrtB; j++ {
+			start := j * sqrtB
+			end := (j + 1) * sqrtB
+			if j == sqrtB-1 {
+				end = B
+			}
+			SubCtsR[r][j] = ctsR[r][start:end]
+		}
+	}
+	pdecs := make([][][]*share.PubShare, R)
+	for r := 0; r < R; r++ {
+		pdecs[r] = make([][]*share.PubShare, sqrtB)
+		for j := 0; j < sqrtB; j++ {
+			pdecs[r][j] = make([]*share.PubShare, t)
+			for thresh := 0; thresh < t; thresh++ {
+				d, err := btd.BatchDec(SubCtsR[r][j], thresh, false)
+				if err != nil {
+					panic(err)
+				}
+				pdecs[r][j][thresh] = d
+			}
+
+		}
+	}
+	wg := sync.WaitGroup{}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for j := 0; j < sqrtB; j++ {
+			wg.Add(1)
+			go func(ctsSubBatch []be.CT, shares []*share.PubShare) {
+				defer wg.Done()
+				_, err := btd.BatchCombine(ctsSubBatch, shares, false)
+				if err != nil {
+					panic(err)
+				}
+			}(SubCtsR[i%R][j], pdecs[i%R][j])
+		}
+	}
+	wg.Wait()
+	b.StopTimer()
 }
