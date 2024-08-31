@@ -83,9 +83,15 @@ func testBenchmarkPDec(b *testing.B, B int) {
 	b.Run(fmt.Sprintf("normal: B=%d", B), func(b *testing.B) {
 		testBatchDec(b, R, B, btd, ctsR)
 	})
-	b.Run(fmt.Sprintf("sqrt: B=%d", B), func(b *testing.B) {
-		testBatchDecSqrt(b, R, B, btd, ctsR)
+	factor := 1.0
+	b.Run(fmt.Sprintf("B=%d, alpha=%1f*sqrt(B)", B, factor), func(b *testing.B) {
+		testBatchDecSqrt(b, R, B, btd, factor, ctsR)
 	})
+	factor = 2.0
+	b.Run(fmt.Sprintf("B=%d, alpha=%1f*sqrt(B)", B, factor), func(b *testing.B) {
+		testBatchDecSqrt(b, R, B, btd, factor, ctsR)
+	})
+
 	//b.Run(fmt.Sprintf("sqrtlog: B=%d", B), func(b *testing.B) {
 	//	testBatchDecSqrtLog(b, R, B, btd, ctsR)
 	//})
@@ -102,15 +108,16 @@ func testBatchDec(b *testing.B, R, B int, btd *be.BTD, ctsR [][]be.CT) {
 	}
 }
 
-func testBatchDecSqrt(b *testing.B, R, B int, btd *be.BTD, ctsR [][]be.CT) {
+func testBatchDecSqrt(b *testing.B, R, B int, btd *be.BTD, factor float64, ctsR [][]be.CT) {
 	SubCtsR := make([][][]be.CT, R)
-	sqrtB := int(math.Floor(math.Sqrt(float64(B))))
+	alpha := int(math.Floor(factor * math.Sqrt(float64(B))))
+	subBatchLen := float64(B) / float64(alpha)
 	for i := 0; i < R; i++ {
-		SubCtsR[i] = make([][]be.CT, sqrtB)
-		for j := 0; j < sqrtB; j++ {
-			start := j * sqrtB
-			end := (j + 1) * sqrtB
-			if j == sqrtB-1 {
+		SubCtsR[i] = make([][]be.CT, alpha)
+		for j := 0; j < alpha; j++ {
+			start := int(math.Round(float64(j) * subBatchLen))
+			end := int(math.Round(float64(j+1) * subBatchLen))
+			if j == alpha-1 {
 				end = B
 			}
 			SubCtsR[i][j] = ctsR[i][start:end]
@@ -119,7 +126,7 @@ func testBatchDecSqrt(b *testing.B, R, B int, btd *be.BTD, ctsR [][]be.CT) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		for j := 0; j < sqrtB; j++ {
+		for j := 0; j < alpha; j++ {
 			_, err := btd.BatchDec(SubCtsR[i%R][j], 0, true)
 			if err != nil {
 				b.Error(err)
@@ -204,13 +211,21 @@ func testBenchmarkBatchCombine(b *testing.B, B int, slow bool) {
 		})
 	}
 	if B < 512 || !slow {
-		b.Run(fmt.Sprintf("sqrt: B=%d", B), func(b *testing.B) {
-			testCombineSqrt(b, R, B, t, btd, ctsR)
+		factor := 1.0
+		b.Run(fmt.Sprintf("B=%d, alpha=%1f*sqrt(B)", B, factor), func(b *testing.B) {
+			testCombineSqrt(b, R, B, t, factor, btd, ctsR)
+		})
+		factor = 2.0
+		b.Run(fmt.Sprintf("B=%d, alpha=%1f*sqrt(B)", B, factor), func(b *testing.B) {
+			testCombineSqrt(b, R, B, t, factor, btd, ctsR)
 		})
 		//b.Run(fmt.Sprintf("sqrtlog: B=%d", B), func(b *testing.B) {
 		//	testCombineSqrtOpt(b, R, B, t, btd, ctsR)
 
 		//})
+	}
+	if B >= 32 || !slow {
+
 	}
 }
 
@@ -235,15 +250,16 @@ func testCombine(b *testing.B, R, B, t int, btd *be.BTD, ctsR [][]be.CT) {
 	}
 }
 
-func testCombineSqrt(b *testing.B, R, B, t int, btd *be.BTD, ctsR [][]be.CT) {
+func testCombineSqrt(b *testing.B, R, B, t int, factor float64, btd *be.BTD, ctsR [][]be.CT) {
 	SubCtsR := make([][][]be.CT, R)
-	sqrtB := int(math.Floor(math.Sqrt(float64(B))))
+	alpha := int(math.Floor(factor * math.Sqrt(float64(B))))
+	subBatchLen := float64(B) / float64(alpha)
 	for r := 0; r < R; r++ {
-		SubCtsR[r] = make([][]be.CT, sqrtB)
-		for j := 0; j < sqrtB; j++ {
-			start := j * sqrtB
-			end := (j + 1) * sqrtB
-			if j == sqrtB-1 {
+		SubCtsR[r] = make([][]be.CT, alpha)
+		for j := 0; j < alpha; j++ {
+			start := int(math.Round(float64(j) * subBatchLen))
+			end := int(math.Round(float64(j+1) * subBatchLen))
+			if j == alpha-1 {
 				end = B
 			}
 			SubCtsR[r][j] = ctsR[r][start:end]
@@ -251,8 +267,8 @@ func testCombineSqrt(b *testing.B, R, B, t int, btd *be.BTD, ctsR [][]be.CT) {
 	}
 	pdecs := make([][][]*share.PubShare, R)
 	for r := 0; r < R; r++ {
-		pdecs[r] = make([][]*share.PubShare, sqrtB)
-		for j := 0; j < sqrtB; j++ {
+		pdecs[r] = make([][]*share.PubShare, alpha)
+		for j := 0; j < alpha; j++ {
 			pdecs[r][j] = make([]*share.PubShare, t)
 			for thresh := 0; thresh < t; thresh++ {
 				d, err := btd.BatchDec(SubCtsR[r][j], thresh, false)
@@ -266,7 +282,7 @@ func testCombineSqrt(b *testing.B, R, B, t int, btd *be.BTD, ctsR [][]be.CT) {
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		for j := 0; j < sqrtB; j++ {
+		for j := 0; j < alpha; j++ {
 			_, err := btd.BatchCombine(SubCtsR[i%R][j], pdecs[i%R][j], false)
 			if err != nil {
 				panic(err)
@@ -387,25 +403,32 @@ func BenchmarkBatchCombineParSqrt(b *testing.B) {
 		}
 		ctsR[j] = cts
 	}
-
-	b.Run(fmt.Sprintf("parallel-sqrt: B=%d", 128), func(b *testing.B) {
-		testCombineSqrtParallel(b, R, 128, t, btd, ctsR)
+	factor := 1.0
+	b.Run(fmt.Sprintf("parallel: B=%d, alpha=%1f*sqrt(B)", 128, factor), func(b *testing.B) {
+		testCombineSqrtParallel(b, R, 128, t, factor, btd, ctsR)
 	})
-
-	b.Run(fmt.Sprintf("parallel-sqrt: B=%d", 512), func(b *testing.B) {
-		testCombineSqrtParallel(b, R, 512, t, btd, ctsR)
+	b.Run(fmt.Sprintf("parallel: B=%d, alpha=%1f*sqrt(B)", 512, factor), func(b *testing.B) {
+		testCombineSqrtParallel(b, R, 512, t, factor, btd, ctsR)
+	})
+	factor = 2.0
+	b.Run(fmt.Sprintf("parallel: B=%d, alpha=%1f*sqrt(B)", 128, factor), func(b *testing.B) {
+		testCombineSqrtParallel(b, R, 128, t, factor, btd, ctsR)
+	})
+	b.Run(fmt.Sprintf("parallel: B=%d, alpha=%1f*sqrt(B)", 512, factor), func(b *testing.B) {
+		testCombineSqrtParallel(b, R, 512, t, factor, btd, ctsR)
 	})
 }
 
-func testCombineSqrtParallel(b *testing.B, R, B, t int, btd *be.BTD, ctsR [][]be.CT) {
+func testCombineSqrtParallel(b *testing.B, R, B, t int, factor float64, btd *be.BTD, ctsR [][]be.CT) {
 	SubCtsR := make([][][]be.CT, R)
-	sqrtB := int(math.Floor(math.Sqrt(float64(B))))
+	alpha := int(math.Floor(factor * math.Sqrt(float64(B))))
+	subBatchLen := float64(B) / float64(alpha)
 	for r := 0; r < R; r++ {
-		SubCtsR[r] = make([][]be.CT, sqrtB)
-		for j := 0; j < sqrtB; j++ {
-			start := j * sqrtB
-			end := (j + 1) * sqrtB
-			if j == sqrtB-1 {
+		SubCtsR[r] = make([][]be.CT, alpha)
+		for j := 0; j < alpha; j++ {
+			start := int(math.Round(float64(j) * subBatchLen))
+			end := int(math.Round(float64(j+1) * subBatchLen))
+			if j == alpha-1 {
 				end = B
 			}
 			SubCtsR[r][j] = ctsR[r][start:end]
@@ -413,8 +436,8 @@ func testCombineSqrtParallel(b *testing.B, R, B, t int, btd *be.BTD, ctsR [][]be
 	}
 	pdecs := make([][][]*share.PubShare, R)
 	for r := 0; r < R; r++ {
-		pdecs[r] = make([][]*share.PubShare, sqrtB)
-		for j := 0; j < sqrtB; j++ {
+		pdecs[r] = make([][]*share.PubShare, alpha)
+		for j := 0; j < alpha; j++ {
 			pdecs[r][j] = make([]*share.PubShare, t)
 			for thresh := 0; thresh < t; thresh++ {
 				d, err := btd.BatchDec(SubCtsR[r][j], thresh, false)
@@ -429,7 +452,7 @@ func testCombineSqrtParallel(b *testing.B, R, B, t int, btd *be.BTD, ctsR [][]be
 	wg := sync.WaitGroup{}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		for j := 0; j < sqrtB; j++ {
+		for j := 0; j < alpha; j++ {
 			wg.Add(1)
 			go func(ctsSubBatch []be.CT, shares []*share.PubShare) {
 				defer wg.Done()

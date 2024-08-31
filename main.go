@@ -40,8 +40,8 @@ func pairingTest() {
 }
 
 func main() {
+	fmt.Println(int(math.Floor(2.0 * math.Sqrt(float64(512)))))
 	suite := curves.NewSuite(kilic.NewSuiteBLS12381())
-	suite.G1().Point().Base()
 	B := 8
 	n := 10
 	t := 5

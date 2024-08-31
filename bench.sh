@@ -1,17 +1,17 @@
 #!/bin/bash
 
 benchmarks=(
-    "Enc:100000x"
-    "PDec8:15000x"
-    "PDec32:2000x"
-    "PDec128:1000x"
-    "PDec512:500x"
-    "BatchCombine8:1500x"
-    "BatchCombine32:150x"
+    "Enc:50000x"
+    "PDec8:10000x"
+    "PDec32:1500x"
+    "PDec128:800x"
+    "PDec512:400x"
+    "BatchCombine8:1000x"
+    "BatchCombine32:100x"
     "BatchCombine128:20x"
     "BatchCombine512Slow:2x"
     "BatchCombine512Fast:10x"
-    "BatchCombinePar:50x"
+    "BatchCombineParSqrt:50x"
 )
 
 benchdir="bench"
