@@ -43,7 +43,8 @@ func PRFSetup(suite curves.Suite, B int, parallel bool) *PRF {
 	}
 	if !parallel {
 		for i := 0; i < B; i++ {
-			for j := 0; j < B; j++ {
+			for j := 0; j < B; j++ { // Note that in the REAL setup, one does not compute and publish the values
+				// for j == i!!! Doing so would make it insecure. We just include them here for testing purposes.
 				setup.g2zixj[mkey{
 					i: i,
 					j: j,
@@ -52,7 +53,7 @@ func PRFSetup(suite curves.Suite, B int, parallel bool) *PRF {
 		}
 		return setup
 	}
-
+	// parallelized version below for faster setup generation...
 	wg := sync.WaitGroup{}
 	const PAR = 16
 	wg.Add(PAR)
@@ -105,6 +106,7 @@ func (f *PRF) SumKeys(k []kyber.Scalar) kyber.Scalar {
 }
 
 func (f *PRF) Puncture(k kyber.Scalar, i int) (kyber.Point, error) {
+	// Verify that the index is within the domain.
 	if i < 0 || i >= f.B {
 		return nil, fmt.Errorf("puncturing index out of domain. Domain: [0, %d-1], index: %d", f.B, i)
 	}
@@ -112,6 +114,7 @@ func (f *PRF) Puncture(k kyber.Scalar, i int) (kyber.Point, error) {
 }
 
 func (f *PRF) Eval(k kyber.Scalar, i int) (kyber.Point, error) {
+	// Verify that the index is within the domain.
 	if i < 0 || i >= f.B {
 		return nil, fmt.Errorf("evaluation index out of domain. Domain: [0, %d-1], index: %d", f.B, i)
 	}
@@ -119,9 +122,11 @@ func (f *PRF) Eval(k kyber.Scalar, i int) (kyber.Point, error) {
 }
 
 func (f *PRF) PEval(kp kyber.Point, pi, i int) (kyber.Point, error) {
+	// Verify that the indices are within the domain.
 	if i < 0 || i >= f.B {
 		return nil, fmt.Errorf("punctured evaluation index out of domain. Domain: [0, %d-1], index: %d", f.B, i)
 	}
+	// Verify that the punctured index is within the domain.
 	if pi < 0 || pi >= f.B {
 		return nil, fmt.Errorf("punctured index out of domain for peval. Domain: [0, %d-1], index: %d", f.B, pi)
 	}
@@ -136,6 +141,7 @@ func (f *PRF) PEval(kp kyber.Point, pi, i int) (kyber.Point, error) {
 }
 
 func (f *PRF) ExpEval(K kyber.Point, i int) (kyber.Point, error) {
+	// Verify that the index is within the domain.
 	if i < 0 || i >= f.B {
 		return nil, fmt.Errorf("exponential evaluation index out of domain. Domain: [0, %d-1], index: %d", f.B, i)
 	}

@@ -3,13 +3,13 @@ package elgamal_test
 import (
 	"btd/elgamal"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/kyber/v4/pairing"
+	"go.dedis.ch/kyber/v4/pairing/bls12381/kilic"
 	"go.dedis.ch/kyber/v4/share"
 	"testing"
 )
 
 func TestElGamal(t *testing.T) {
-	suite := pairing.NewSuiteBn256()
+	suite := kilic.NewBLS12381Suite()
 	e := elgamal.NewElGamal(suite.G1(), suite.RandomStream())
 	_, pk := e.KeyGen(10, 5)
 	m := suite.G1().Point().Pick(suite.RandomStream())
