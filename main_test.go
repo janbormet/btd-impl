@@ -79,15 +79,16 @@ func testBenchmarkPDec(b *testing.B, B int) {
 		}
 		ctsR[j] = cts
 	}
-
+	// normal (unoptimized)
 	b.Run(fmt.Sprintf("normal: B=%d", B), func(b *testing.B) {
 		testBatchDec(b, R, B, btd, ctsR)
 	})
-	factor := 1.0
+
+	factor := 1.0 // alpha = Sqrt(B) -- OPT-1
 	b.Run(fmt.Sprintf("B=%d, alpha=%1f*sqrt(B)", B, factor), func(b *testing.B) {
 		testBatchDecSqrt(b, R, B, btd, factor, ctsR)
 	})
-	factor = 2.0
+	factor = 2.0 // alpha = 2*Sqrt(B) -- OPT-2
 	b.Run(fmt.Sprintf("B=%d, alpha=%1f*sqrt(B)", B, factor), func(b *testing.B) {
 		testBatchDecSqrt(b, R, B, btd, factor, ctsR)
 	})
@@ -211,11 +212,11 @@ func testBenchmarkBatchCombine(b *testing.B, B int, slow bool) {
 		})
 	}
 	if B < 512 || !slow {
-		factor := 1.0
+		factor := 1.0 // OPT-1 (alpha = sqrt(B))
 		b.Run(fmt.Sprintf("B=%d, alpha=%1f*sqrt(B)", B, factor), func(b *testing.B) {
 			testCombineSqrt(b, R, B, t, factor, btd, ctsR)
 		})
-		factor = 2.0
+		factor = 2.0 // OPT-2 (alpha = 2*sqrt(B))
 		b.Run(fmt.Sprintf("B=%d, alpha=%1f*sqrt(B)", B, factor), func(b *testing.B) {
 			testCombineSqrt(b, R, B, t, factor, btd, ctsR)
 		})
@@ -403,14 +404,14 @@ func BenchmarkBatchCombineParSqrt(b *testing.B) {
 		}
 		ctsR[j] = cts
 	}
-	factor := 1.0
+	factor := 1.0 // Opt-1
 	b.Run(fmt.Sprintf("parallel: B=%d, alpha=%1f*sqrt(B)", 128, factor), func(b *testing.B) {
 		testCombineSqrtParallel(b, R, 128, t, factor, btd, ctsR)
 	})
 	b.Run(fmt.Sprintf("parallel: B=%d, alpha=%1f*sqrt(B)", 512, factor), func(b *testing.B) {
 		testCombineSqrtParallel(b, R, 512, t, factor, btd, ctsR)
 	})
-	factor = 2.0
+	factor = 2.0 // Opt-2
 	b.Run(fmt.Sprintf("parallel: B=%d, alpha=%1f*sqrt(B)", 128, factor), func(b *testing.B) {
 		testCombineSqrtParallel(b, R, 128, t, factor, btd, ctsR)
 	})
